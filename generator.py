@@ -36,7 +36,23 @@ def square_scale(im, scale=1, size=128):
     return back
 
 
-def make_gif(file, frames=12, fps=10, mode='bob', intensity=10, offset=0, size=128):
+def square_crop(im, x, y):
+    back = Image.new(mode='RGBA', size=im.size, color=(0, 0, 0, 0))
+
+    if abs(x) >= im.width or abs(y) >= im.height:
+        return back
+
+    box = (int(-x) if x < 0 else 0, int(-y) if y < 0 else 0,
+           int(im.width - x) if x >= 0 else im.width, int(im.height - y) if y >= 0 else im.height)
+
+    cpy = im.crop(box=box)
+
+    back.paste(cpy, box=box, mask=cpy)
+
+    return back
+
+
+def make_gif(file, frames=12, fps=10, mode='bob', intensity=10, offset=0, size=128, crop=False):
     src = Image.open(file)
 
     modes = mode.split('-')
@@ -67,21 +83,21 @@ def make_gif(file, frames=12, fps=10, mode='bob', intensity=10, offset=0, size=1
             i = float(intensities[n])
             o = float(offsets[n])
 
-            cos_factor = (1 - np.cos(2 * np.pi * f / (frames-1))) / 2
-            sin_factor = (np.sin(2 * np.pi * f / (frames-1)) + 1) / 2
-            if m == 'spin':
-                a += (360 / (frames-1)) * f + o
+            cos_factor = (1 - np.cos(2 * np.pi * f / frames)) / 2
+            sin_factor = (np.sin(2 * np.pi * f / frames) + 1) / 2
             if m == 'spinccw':
+                a += (360 / (frames-1)) * f + o
+            if m in ['spin', 'spincw']:
                 a -= (360 / (frames-1)) * f + o
 
             if m == 'right':
-                x += (src.width / (frames)) * f + o if i != 0 else o
+                x += (size / frames) * f + o if i != 0 else o
             if m == 'left':
-                x -= (src.width / (frames - 1)) * f + o if i != 0 else o
+                x -= (size / frames) * f + o if i != 0 else o
             if m == 'up':
-                y -= (src.height / (frames)) * f + o if i != 0 else o
+                y -= (size / frames) * f + o if i != 0 else o
             if m == 'down':
-                y += (src.height / (frames - 1)) * f + o if i != 0 else o
+                y += (size / frames) * f + o if i != 0 else o
 
             if m == 'bob':
                 a += (sin_factor - 0.5) * 2 * i + o
@@ -97,11 +113,15 @@ def make_gif(file, frames=12, fps=10, mode='bob', intensity=10, offset=0, size=1
 
         frame = src.copy()
         frame = square_scale(frame, scale=s, size=size)
+
+        if crop:
+            frame = square_crop(frame, x=x, y=y)
         frame = ImageChops.offset(frame.rotate(a), xoffset=int(x), yoffset=int(y))
+
         images.append(gen_frame(frame))
 
     filename = os.path.basename(file).replace('.png', '')
-    images[0].save(f'gifs/very_{filename}.gif', save_all=True, disposal=2, append_images=images[1:-1],
+    images[0].save(f'gifs/very_{filename}.gif', save_all=True, disposal=2, append_images=images[1:],
                    duration=int(1000/fps), loop=0)
 
 
@@ -139,6 +159,9 @@ For translational modes, supply a distance in pixels.
 If there are multiple modes combined with hyphens, supply the same number of offset values
 separated by hyphens, e.g. "--mode bob-shake-up --offset 20-10-0". Default: 10""")
 
+    parser.add_argument("-c", "--crop", help="\nCrop off-screen images. By default, images tessellate",
+                        action='store_true', default=False)
+
     parser.add_argument("-s", "--size", help="\nSize of GIF in pixels (will always be square). Default: 128.",
                         default=128, type=int)
 
@@ -153,6 +176,6 @@ if __name__ == '__main__':
 
     if args.file.endswith('.png'):
         make_gif(args.file, frames=args.frames, fps=args.fps,
-                 mode=args.mode, intensity=args.intensity, offset=args.offset, size=args.size)
+                 mode=args.mode, intensity=args.intensity, offset=args.offset, size=args.size, crop=args.crop)
     else:
         raise Exception("Please supply a PNG source file.")
